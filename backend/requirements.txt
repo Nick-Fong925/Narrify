@@ -3,3 +3,18 @@ uvicorn
 sqlalchemy
 requests
 pydantic
+apscheduler
+gTTS
+
+# YouTube API
+google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2
+
+# Configuration management
+pyyaml
+python-dotenv
+pydantic-settings
+
+# Timezone support
+pytz

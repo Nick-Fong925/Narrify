@@ -1,0 +1,254 @@
+# ============================================================================
+# Narrify - Root .gitignore
+# ============================================================================
+
+# ============================================================================
+# Operating System Files
+# ============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ============================================================================
+# Python
+# ============================================================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ============================================================================
+# IDEs and Editors
+# ============================================================================
+# VSCode
+.vscode/
+*.code-workspace
+.history/
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# JetBrains
+.idea/
+*.iml
+out/
+
+# ============================================================================
+# Project Specific - Sensitive Data
+# ============================================================================
+# YouTube API Credentials (SENSITIVE!)
+backend/config/youtube_credentials.json
+backend/config/youtube_token.json
+backend/config/client_secret*.json
+
+# Environment variables (SENSITIVE!)
+.env
+.env.local
+.env.*.local
+
+# API Keys and Secrets
+*.key
+*.pem
+secrets/
+credentials/
+
+# ============================================================================
+# Project Specific - Generated Media Files
+# ============================================================================
+# Video files
+*.mp4
+*.avi
+*.mov
+*.wmv
+*.flv
+*.webm
+
+# Audio files
+*.mp3
+*.wav
+*.ogg
+*.m4a
+*.flac
+*.aac
+
+# Subtitle files
+*.srt
+*.ass
+*.vtt
+*.sub
+
+# Images (if you generate thumbnails)
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.tiff
+*.ico
+
+# Generated media directories
+backend/app/video/media/generated_videos/*
+!backend/app/video/media/generated_videos/.gitkeep
+backend/app/video/media/base_videos/*.mp4
+!backend/app/video/media/base_videos/.gitkeep
+
+# TTS Training/Voice cloning data
+backend/app/video/training/*
+!backend/app/video/training/.gitkeep
+
+# ============================================================================
+# Project Specific - Database Files
+# ============================================================================
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Database backups
+*_backup_*.db
+backend/stories_backup_*.db
+
+# Keep example/schema files
+!schema.sql
+!example.db
+
+# ============================================================================
+# Project Specific - Logs
+# ============================================================================
+# Log files
+*.log
+logs/
+*.log.*
+log/
+
+# Specific log directory
+backend/logs/*
+!backend/logs/.gitkeep
+
+# ============================================================================
+# Project Specific - Temporary Files
+# ============================================================================
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.backup
+*.cache
+
+# ============================================================================
+# Node.js (if you add a frontend later)
+# ============================================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn-integrity
+package-lock.json
+yarn.lock
+
+# ============================================================================
+# Documentation Build Files
+# ============================================================================
+docs/_build/
+site/
+
+# ============================================================================
+# Jupyter Notebooks (if you use them for analysis)
+# ============================================================================
+.ipynb_checkpoints
+*.ipynb
+
+# ============================================================================
+# System and Other
+# ============================================================================
+# Backup files
+*.orig
+*.rej
+
+# Compressed files
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+
+# Lock files (uncomment if not using them)
+# Pipfile.lock
+# poetry.lock

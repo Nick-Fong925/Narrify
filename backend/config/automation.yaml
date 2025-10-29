@@ -1,0 +1,59 @@
+# Narrify Automation Configuration
+# This file controls the automated video generation and YouTube posting system
+
+automation:
+  # Total videos to generate and post per day
+  videos_per_day: 20
+
+  # Posting schedule (24-hour format in EST)
+  # Each batch will generate and post videos_per_batch videos
+  schedule_times:
+    - "17:00" # 5 PM EST - First batch of 5 videos
+    - "21:00" # 9 PM EST - Second batch of 5 videos
+
+  # Timezone for scheduling
+  timezone: "America/New_York"
+
+  # Videos to generate per batch (videos_per_day / number of schedule_times)
+  videos_per_batch: 10
+
+youtube:
+  # Privacy status: public, unlisted, or private
+  privacy: "public"
+
+  # Suffix added to all video titles
+  title_suffix: " #shorts"
+
+  # YouTube category ID (24 = Entertainment)
+  category_id: "24"
+
+  # Default tags for all videos
+  default_tags:
+    - "shorts"
+    - "reddit"
+    - "story"
+    - "storytelling"
+
+database:
+  # What to do after successful posting: mark_posted or delete
+  after_posting: "mark_posted"
+
+  # Minimum Reddit score to consider for video generation
+  min_score_threshold: 500
+
+  # Minimum word count for story content
+  min_word_count: 150
+
+  # Days to keep posted records before cleanup (optional)
+  retention_days: 90
+
+video:
+  # Video generation settings (can override subtitle_config.py values)
+  # Delete video file after successful upload to conserve space
+  delete_after_upload: true
+
+  # Maximum retries for failed video generation
+  max_generation_retries: 3
+
+  # Maximum retries for failed YouTube upload
+  max_upload_retries: 3

@@ -1,12 +1,130 @@
+# ============================================================================
+# Backend-specific .gitignore (Narrify)
+# Note: Root .gitignore covers most cases, this is for backend-specific overrides
+# ============================================================================
+
+# ============================================================================
+# Python
+# ============================================================================
 __pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual Environments
 venv/
 env/
 ENV/
 .venv/
-*.pyc
-*.pyo
-*.pyd
+env.bak/
+venv.bak/
+
+# ============================================================================
+# Sensitive Files - NEVER COMMIT THESE!
+# ============================================================================
+# YouTube API Credentials
+config/youtube_credentials.json
+config/youtube_token.json
+config/client_secret*.json
+
+# Environment variables
+.env
+.env.local
+
+# Any other credentials
+*.key
+*.pem
+
+# ============================================================================
+# Database Files
+# ============================================================================
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Database backups
+stories_backup_*.db
+*_backup_*.db
+
+# ============================================================================
+# Generated Media Files
+# ============================================================================
+# Videos
+*.mp4
+*.avi
+*.mov
+
+# Audio
+*.mp3
+*.wav
+*.ogg
+*.m4a
+
+# Subtitles
+*.srt
+*.ass
+*.vtt
+
+# Generated media directories
+app/video/media/generated_videos/*
+!app/video/media/generated_videos/.gitkeep
+
+# Base videos (keep examples but ignore large files)
+app/video/media/base_videos/*.mp4
+!app/video/media/base_videos/.gitkeep
+
+# TTS training data
+app/video/training/*
+!app/video/training/.gitkeep
+
+# ============================================================================
+# Logs
+# ============================================================================
+logs/
+*.log
+*.log.*
+
+# Specific log files
+narrify.log
+
+# ============================================================================
+# IDE and Editors
+# ============================================================================
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+
+# ============================================================================
+# OS Files
+# ============================================================================
 .DS_Store
+.DS_Store?
+._*
 Thumbs.db
+Desktop.ini
+
+# ============================================================================
+# Temporary Files
+# ============================================================================
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# ============================================================================
+# Testing
+# ============================================================================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
