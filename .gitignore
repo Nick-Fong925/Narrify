@@ -230,6 +230,17 @@ docs/_build/
 site/
 
 # ============================================================================
+# AI/Copilot Generated Files
+# ============================================================================
+# Copilot-generated documentation and setup files
+CLEANUP_AUDIT.md
+WINDOWS_SETUP.md
+*_AUDIT.md
+*_SETUP.md
+verify_setup.py
+install_ffmpeg.ps1
+
+# ============================================================================
 # Jupyter Notebooks (if you use them for analysis)
 # ============================================================================
 .ipynb_checkpoints

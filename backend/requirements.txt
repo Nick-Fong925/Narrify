@@ -1,20 +1,49 @@
-fastapi
-uvicorn
-sqlalchemy
-requests
-pydantic
-apscheduler
-gTTS
+# Core Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+
+# Database
+sqlalchemy==2.0.23
+
+# HTTP & Requests
+requests==2.31.0
+
+# Data Validation
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Scheduling
+apscheduler==3.10.4
+
+# Text-to-Speech
+TTS==0.21.1
+
+# Audio Processing
+torch==2.1.0
+torchaudio==2.1.0
+soundfile==0.12.1
+librosa==0.10.1
+pydub==0.25.1
+
+# Subtitle Generation (Whisper)
+openai-whisper==20231117
 
 # YouTube API
-google-api-python-client
-google-auth-oauthlib
-google-auth-httplib2
+google-api-python-client==2.108.0
+google-auth-oauthlib==1.1.0
+google-auth-httplib2==0.1.1
+google-auth==2.23.4
 
 # Configuration management
-pyyaml
-python-dotenv
-pydantic-settings
+pyyaml==6.0.1
+python-dotenv==1.0.0
 
 # Timezone support
-pytz
+pytz==2023.3
+
+# Logging
+colorlog==6.8.0
+
+# Video Processing
+ffmpeg-python==0.2.0
