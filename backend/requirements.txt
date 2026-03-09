@@ -16,18 +16,22 @@ pydantic-settings==2.1.0
 # Scheduling
 apscheduler==3.10.4
 
-# Text-to-Speech
-TTS==0.21.1
+# Text-to-Speech (Kokoro local model — no cloud dependency)
+kokoro>=0.9.2
+misaki[en]>=0.9.2
 
-# Audio Processing
-torch==2.1.0
-torchaudio==2.1.0
+# Audio Processing (CUDA 12.1 — RTX 3060)
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch==2.2.1+cu121
+torchaudio==2.2.1+cu121
 soundfile==0.12.1
 librosa==0.10.1
 pydub==0.25.1
+numpy<2  # torch 2.2.1 is incompatible with numpy 2.x C API
+transformers<4.41  # 4.41+ requires torch>=2.4; we use torch 2.2.1
 
 # Subtitle Generation (Whisper)
-openai-whisper==20231117
+faster-whisper>=1.0.0
 
 # YouTube API
 google-api-python-client==2.108.0
@@ -47,3 +51,6 @@ colorlog==6.8.0
 
 # Video Processing
 ffmpeg-python==0.2.0
+
+# AI Text Processing
+anthropic>=0.40.0

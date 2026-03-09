@@ -1,7 +1,7 @@
 import subprocess
 from pathlib import Path
 import json
-import random
+from app.config import settings
 
 
 def get_video_duration(video_path: str) -> float:
@@ -34,15 +34,15 @@ def get_video_dimensions(video_path: str) -> tuple:
     return int(stream["width"]), int(stream["height"])
 
 
-def merge_audio_with_video(base_video: str, audio_file: str, out_video: str, start_time: float = None, duration: float = None):
-    """Mute base video and overlay audio track, writing to out_video.
+def merge_audio_with_video(base_video: str, audio_file: str, output_path: str, start_time: float = None, duration: float = None):
+    """Mute base video and overlay audio track, writing to output_path.
     Automatically detects horizontal videos and applies 9:16 center crop for vertical format.
-    
+
     Args:
         start_time: Optional start time in seconds to begin video segment
         duration: Optional duration in seconds for video segment
     """
-    out = Path(out_video)
+    out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     
     # Get video dimensions to determine if cropping is needed
@@ -83,49 +83,43 @@ def merge_audio_with_video(base_video: str, audio_file: str, out_video: str, sta
         crop_x = (width - crop_width) // 2
         crop_y = (height - crop_height) // 2
         
-        print(f"🎬 Auto-cropping {width}x{height} → {crop_width}x{crop_height} (center crop for 9:16)")
+        print(f"Auto-cropping {width}x{height} -> {crop_width}x{crop_height} (center crop for 9:16)")
         
-        from app.video.subtitle_config import VIDEO_CRF, VIDEO_PRESET
-        
+        if settings.video.use_nvenc:
+            encode_args = ["-c:v", "h264_nvenc", "-preset", "p4", "-cq", "23"]
+        else:
+            encode_args = ["-c:v", "libx264", "-preset", settings.video.video_preset, "-crf", str(settings.video.video_crf)]
+
         cmd.extend([
             "-vf", f"crop={crop_width}:{crop_height}:{crop_x}:{crop_y}",
-            "-c:v", "libx264",
-            "-preset", VIDEO_PRESET,  # Use config preset (now "veryfast")
-            "-crf", str(VIDEO_CRF),   # Use config CRF (now 23)
-            "-r", "30",  # Reduce to 30fps for lower processing requirements
+            *encode_args,
+            "-r", "30",
             "-c:a", "aac",
-            "-b:a", "128k",  # Reduced audio bitrate
+            "-b:a", "192k",
             "-map", "0:v:0",
             "-map", "1:a:0",
             "-shortest",
-            # Strip all metadata from source video
             "-map_metadata", "-1",
             "-fflags", "+bitexact",
             str(out),
         ])
     else:
         # Video is already vertical, just merge audio
-        print(f"✓ Video is already vertical {width}x{height}, merging audio only")
+        print(f"Video is already vertical {width}x{height}, merging audio only")
         cmd.extend([
-            # Copy video stream, encode audio stream
             "-c:v", "copy",
             "-c:a", "aac",
             "-map", "0:v:0",
             "-map", "1:a:0",
             "-shortest",
-            # Strip all metadata from source video
             "-map_metadata", "-1",
             "-fflags", "+bitexact",
             str(out),
         ])
     
     subprocess.check_call(cmd)
-    return str(out)
+    return output_path
 
-
-import subprocess
-import os
-from pathlib import Path
 
 def format_ass_time(seconds):
     """Convert seconds to ASS time format (H:MM:SS.CC)"""
@@ -183,9 +177,7 @@ def srt_time_to_seconds(time_str):
 def generate_ass_subtitles(words_with_timing, output_path, video_width=810, video_height=1440):
     """Generate ASS subtitle file respecting the phrase groupings from SRT"""
     
-    # Calculate font size based on video height (proportional scaling)
-    # Base: 36pt for 854px height → ~60pt for 1440px height
-    # Formula: (video_height / 854) * 36 ≈ 60 for 1440px
+    # Scale font, outline, and shadow proportionally to video height
     base_font_size = 36
     base_height = 854
     scaled_font_size = int((video_height / base_height) * base_font_size)
@@ -196,11 +188,7 @@ def generate_ass_subtitles(words_with_timing, output_path, video_width=810, vide
     scaled_outline = int((video_height / base_height) * base_outline)
     scaled_shadow = int((video_height / base_height) * base_shadow)
     
-    # ASS header with bold white text, black outline, and shadow - no background box
-    # Color format: &HAABBGGRR (Alpha, Blue, Green, Red in hex)
-    # &H00FFFFFF = white text, &H00000000 = black outline
-    # BorderStyle=1 with Outline creates a strong black border around text
-    # Shadow adds depth
+    # ASS header with bold white text, black outline
     ass_content = f"""[Script Info]
 Title: Generated Subtitles
 ScriptType: v4.00+
@@ -215,63 +203,155 @@ Style: Default,Arial,{scaled_font_size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     
-    # Use the phrases exactly as they come from the SRT file
-    # Each item in words_with_timing already represents a complete phrase
     phrases = []
     for word_data in words_with_timing:
         phrases.append({
             'start': word_data['start'],
             'end': word_data['end'],
-            'text': word_data['word']  # This is actually the full phrase text from SRT
+            'text': word_data['word']
         })
     
-    # Add each phrase with timing
-    # Each phrase replaces the previous one by having consecutive timing
     for i, phrase in enumerate(phrases):
         start_time = format_ass_time(phrase['start'])
-        # Make each phrase last until the next one starts (no gaps)
         if i < len(phrases) - 1:
             end_time = format_ass_time(phrases[i + 1]['start'])
         else:
             end_time = format_ass_time(phrase['end'])
-        
         text = phrase['text']
-        
-        # White text with bold styling
         ass_content += f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{text}\n"
-    
-    # Write ASS file
+
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(ass_content)
 
-def burn_text_overlay(video_path, srt_path, output_path, speed_multiplier=1.0):
-    """
-    Burn text overlay onto video using ASS subtitles with word-level timing.
-    Uses high quality encoding settings to preserve video quality.
-    Optionally applies video speed-up in the same pass to avoid double re-encoding.
-    
+def encode_final_video(
+    base_video: str,
+    audio_file: str,
+    ass_file: str,
+    output_path: str,
+    start_time: float = None,
+    duration: float = None,
+    speed_multiplier: float = 1.0,
+    metadata: dict = None,
+):
+    """Single-pass encode: crop base video, mux audio, burn ASS subtitles, apply speed-up,
+    and write metadata — all in one ffmpeg call.
+
+    Replaces the old two-pass merge_audio_with_video → burn_text_overlay pipeline.
+    Decodes the source only once, eliminating one full lossy re-encode.
+
     Args:
-        video_path: Input video path
-        srt_path: SRT subtitle file path
-        output_path: Output video path
-        speed_multiplier: If > 1.0, speeds up video in the same encoding pass
+        base_video:      Path to the (possibly horizontal) source video.
+        audio_file:      Path to the enhanced TTS audio (MP3).
+        ass_file:        Path to the ASS subtitle file.
+        output_path:     Path for the final MP4.
+        start_time:      Seconds into base_video to start the clip.
+        duration:        Length of the clip in seconds (None = until audio ends).
+        speed_multiplier: Playback speed (1.3 = 30% faster, applied via setpts + atempo).
+        metadata:        Optional dict of ffmpeg -metadata key=value pairs.
     """
-    # Parse SRT file to get timing and text
+    width, height = get_video_dimensions(base_video)
+    aspect_ratio = width / height
+    target_aspect = 9 / 16
+
+    # Calculate crop dimensions for 9:16 (center crop)
+    if aspect_ratio > target_aspect:
+        crop_height = height
+        crop_width = int(crop_height * target_aspect)
+        if crop_width > width:
+            crop_width = width
+            crop_height = int(crop_width / target_aspect)
+        crop_x = (width - crop_width) // 2
+        crop_y = (height - crop_height) // 2
+        print(f"Single-pass encode: crop {width}x{height} -> {crop_width}x{crop_height}, "
+              f"speed={speed_multiplier}x")
+    else:
+        crop_width, crop_height, crop_x, crop_y = width, height, 0, 0
+        print(f"Single-pass encode: no crop ({width}x{height}), speed={speed_multiplier}x")
+
+    # ASS path needs forward slashes and escaped colons for ffmpeg on Windows
+    ass_ffmpeg = ass_file.replace('\\', '/').replace(':', '\\:')
+
+    # Build video filter chain: crop → subtitles → speed
+    vf_parts = [f"crop={crop_width}:{crop_height}:{crop_x}:{crop_y}", f"ass='{ass_ffmpeg}'"]
+    if speed_multiplier != 1.0:
+        vf_parts.append(f"setpts=PTS/{speed_multiplier}")
+
+    # Build audio filter chain: speed (chain atempo if > 2.0)
+    af_parts = []
+    if speed_multiplier != 1.0:
+        remaining = speed_multiplier
+        while remaining > 2.0:
+            af_parts.append("atempo=2.0")
+            remaining /= 2.0
+        while remaining < 0.5:
+            af_parts.append("atempo=0.5")
+            remaining /= 0.5
+        af_parts.append(f"atempo={remaining}")
+
+    cmd = ["ffmpeg", "-y"]
+    if start_time is not None:
+        cmd.extend(["-ss", str(start_time)])
+    if duration is not None:
+        cmd.extend(["-t", str(duration)])  # Input duration for base video (before -i)
+    cmd.extend(["-i", base_video, "-i", audio_file])
+
+    cmd.extend([
+        "-map", "0:v:0",
+        "-map", "1:a:0",
+        "-vf", ",".join(vf_parts),
+        "-r", "30",
+        "-pix_fmt", "yuv420p",
+        "-profile:v", "high",
+        "-level", "4.0",
+    ])
+
+    if af_parts:
+        cmd.extend(["-af", ",".join(af_parts)])
+
+    # Video encoder: NVENC (GPU) with quality equivalent to CRF 20, fallback to libx264
+    if settings.video.use_nvenc:
+        cmd.extend(["-c:v", "h264_nvenc", "-preset", "p4", "-cq", str(settings.video.video_crf),
+                    "-maxrate", settings.video.video_bitrate_max, "-bufsize", "8M"])
+    else:
+        cmd.extend(["-c:v", "libx264", "-preset", settings.video.video_preset, "-crf", str(settings.video.video_crf),
+                    "-maxrate", settings.video.video_bitrate_max, "-bufsize", "8M"])
+
+    # Audio encoder: always re-encode (atempo or not, we're muxing new audio)
+    cmd.extend(["-c:a", "aac", "-b:a", settings.video.audio_bitrate])
+
+    cmd.extend(["-shortest"])
+
+    if metadata:
+        for key, value in metadata.items():
+            safe_value = str(value).replace('\\', '\\\\').replace('"', '\\"')
+            cmd.extend(["-metadata", f"{key}={safe_value}"])
+        cmd.extend(["-movflags", "+faststart"])
+    else:
+        cmd.extend(["-map_metadata", "-1", "-fflags", "+bitexact"])
+
+    cmd.append(output_path)
+    subprocess.check_call(cmd)
+
+
+def burn_text_overlay(video_path, srt_path, output_path, speed_multiplier=1.0, metadata=None):
+    """Burn ASS subtitles onto video, optionally speeding up and writing metadata in the same pass.
+
+    Args:
+        metadata: Optional dict of ffmpeg -metadata key=value pairs. When provided,
+                  metadata is written directly into the output file and -movflags +faststart
+                  is added for streaming optimisation. When None, metadata is stripped.
+    """
     words_with_timing = parse_srt_for_drawtext(srt_path)
-    
-    # Generate ASS subtitle file
     ass_path = output_path.replace('.mp4', '.ass')
     generate_ass_subtitles(words_with_timing, ass_path)
-    
-    # Build video and audio filters
-    video_filters = [f"ass='{ass_path}'"]
+
+    # On Windows, ffmpeg's ass filter requires forward slashes and escaped colons
+    ass_path_ffmpeg = ass_path.replace('\\', '/').replace(':', '\\:')
+    video_filters = [f"ass='{ass_path_ffmpeg}'"]
     audio_filters = []
-    
-    # Add speed-up filters if needed (combine in single pass)
+
     if speed_multiplier != 1.0:
         video_filters.append(f"setpts=PTS/{speed_multiplier}")
-        
-        # Handle audio tempo (chain if > 2.0)
         remaining_speed = speed_multiplier
         while remaining_speed > 2.0:
             audio_filters.append("atempo=2.0")
@@ -280,43 +360,41 @@ def burn_text_overlay(video_path, srt_path, output_path, speed_multiplier=1.0):
             audio_filters.append("atempo=0.5")
             remaining_speed /= 0.5
         audio_filters.append(f"atempo={remaining_speed}")
-    
-    # Build ffmpeg command with high quality encoding
+
     cmd = [
         'ffmpeg', '-y',
         '-i', video_path,
         '-vf', ','.join(video_filters),
     ]
-    
-    # Add audio filter if needed
+
     if audio_filters:
         cmd.extend(['-af', ','.join(audio_filters)])
-    else:
-        cmd.extend(['-c:a', 'copy'])  # Copy audio if no speed change
-    
-    # High quality video encoding settings
-    from app.video.subtitle_config import VIDEO_CRF, VIDEO_PRESET, VIDEO_BITRATE_MAX
-    
+
     cmd.extend([
         '-c:v', 'libx264',
-        '-preset', VIDEO_PRESET,  # Use config preset (now "veryfast" for low RAM)
-        '-crf', str(VIDEO_CRF),   # Use config CRF (now 23 for smaller files)
-        '-maxrate', VIDEO_BITRATE_MAX,  # Use config max bitrate (now 4M)
-        '-bufsize', '4M',  # Reduced from 16M → 8M → 4M for minimal RAM usage
-        '-r', '30',  # Reduce framerate from 60fps to 30fps (50% less data to process)
+        '-preset', settings.video.video_preset,
+        '-crf', str(settings.video.video_crf),
+        '-maxrate', settings.video.video_bitrate_max,
+        '-bufsize', '4M',
+        '-r', '30',
         '-pix_fmt', 'yuv420p',
-        '-profile:v', 'high',  # H.264 High profile for better compression
+        '-profile:v', 'high',
         '-level', '4.0',
-        # Audio settings (if re-encoding)
-        '-c:a', 'aac' if audio_filters else 'copy',
-        '-b:a', '128k' if audio_filters else None,  # Reduced from 192k to 128k
-        # Remove metadata
-        '-map_metadata', '-1',
-        '-fflags', '+bitexact',
-        output_path
     ])
-    
-    # Remove None values
-    cmd = [c for c in cmd if c is not None]
-    
+
+    if audio_filters:
+        cmd.extend(['-c:a', 'aac', '-b:a', '192k'])
+    else:
+        cmd.extend(['-c:a', 'copy'])
+
+    if metadata:
+        for key, value in metadata.items():
+            safe_value = str(value).replace('\\', '\\\\').replace('"', '\\"')
+            cmd.extend(['-metadata', f'{key}={safe_value}'])
+        cmd.extend(['-movflags', '+faststart'])
+    else:
+        cmd.extend(['-map_metadata', '-1', '-fflags', '+bitexact'])
+
+    cmd.append(output_path)
+
     subprocess.check_call(cmd)

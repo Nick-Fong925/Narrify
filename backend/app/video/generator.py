@@ -1,17 +1,11 @@
 from pathlib import Path
 import uuid
 import random
-import subprocess
+from datetime import datetime
 from app.video.tts import text_to_speech
-from app.video.ffmpeg_utils import merge_audio_with_video, burn_text_overlay, get_video_duration
+from app.video.ffmpeg_utils import encode_final_video, get_video_duration
 from app.video.srt import generate_srt_from_audio_and_text
-from app.video.subtitle_config import (
-    VIDEO_SPEED_MULTIPLIER,
-    NARRATE_TITLE,
-    VIDEO_CRF,
-    VIDEO_PRESET,
-    VIDEO_BITRATE_MAX
-)
+from app.config import settings
 
 BASE_DIR = Path(__file__).resolve().parent / "media"
 BASE_VIDEOS = BASE_DIR / "base_videos"
@@ -24,69 +18,8 @@ def estimate_audio_duration(text: str, words_per_second: float = 2.5) -> float:
     return word_count / words_per_second
 
 
-def speed_up_video(input_path: str, output_path: str, speed: float = 1.25):
-    """
-    Speed up video and audio by a given multiplier.
-    
-    Args:
-        input_path: Input video path
-        output_path: Output video path
-        speed: Speed multiplier (1.0 = normal, 1.25 = 25% faster, 1.5 = 50% faster)
-    """
-    print(f"⚡ Speeding up video to {speed}x...")
-    
-    # Calculate audio tempo and video speed
-    # For speed 1.25: video plays 1.25x faster, audio tempo increases by 1.25x
-    video_speed = speed
-    audio_tempo = speed
-    
-    # Use ffmpeg to speed up both video and audio
-    # -filter:v "setpts=PTS/speed" speeds up video
-    # -filter:a "atempo=speed" speeds up audio (preserves pitch)
-    # atempo only supports 0.5-2.0, so we may need to chain multiple filters
-    
-    audio_filters = []
-    remaining_speed = audio_tempo
-    
-    # Chain atempo filters if speed > 2.0
-    while remaining_speed > 2.0:
-        audio_filters.append("atempo=2.0")
-        remaining_speed /= 2.0
-    
-    while remaining_speed < 0.5:
-        audio_filters.append("atempo=0.5")
-        remaining_speed /= 0.5
-    
-    audio_filters.append(f"atempo={remaining_speed}")
-    
-    audio_filter_str = ",".join(audio_filters)
-    
-    cmd = [
-        'ffmpeg', '-y',
-        '-i', input_path,
-        '-filter:v', f'setpts=PTS/{video_speed}',  # Speed up video
-        '-filter:a', audio_filter_str,  # Speed up audio
-        '-c:v', 'libx264',  # Re-encode video
-        '-preset', VIDEO_PRESET,  # Encoding quality preset
-        '-crf', str(VIDEO_CRF),  # Quality (lower = better)
-        '-maxrate', VIDEO_BITRATE_MAX,  # Max bitrate for quality
-        '-bufsize', '10M',  # Buffer size for bitrate control
-        '-pix_fmt', 'yuv420p',  # Pixel format for compatibility
-        '-c:a', 'aac',  # Audio codec
-        '-b:a', '192k',  # High audio bitrate for YouTube
-        output_path
-    ]
-    
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise Exception(f"Video speed adjustment failed: {result.stderr}")
-    
-    print(f"✅ Video sped up to {speed}x successfully!")
-    return output_path
-
-
-def generate_video_from_text(text: str, base_video_name: str, job_id: str = None, voice_type: str = "male", 
-                            story_title: str = None, subreddit: str = None):
+def generate_video_from_text(text: str, base_video_name: str, job_id: str = None,
+                              story_title: str = None, subreddit: str = None):
     """Create an mp4 by generating audio from text, selecting a random portion of base video, overlaying audio and burning SRT captions.
 
     Args:
@@ -106,44 +39,37 @@ def generate_video_from_text(text: str, base_video_name: str, job_id: str = None
 
     out_audio = OUT_DIR / f"{job_id}.mp3"
     out_srt = OUT_DIR / f"{job_id}.srt"
-    out_temp = OUT_DIR / f"{job_id}.temp.mp4"
-    out_temp_final = OUT_DIR / f"{job_id}.temp_final.mp4"
-    out_temp_sped = OUT_DIR / f"{job_id}.temp_sped.mp4"
+    out_ass = OUT_DIR / f"{job_id}.ass"
     out_final = OUT_DIR / f"{job_id}.mp4"
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    
+
     # Track all intermediate files for cleanup (even on error)
-    intermediate_files = [out_audio, out_srt, out_temp, out_temp_final, out_temp_sped]
-    
+    intermediate_files = [out_audio, out_srt, out_ass]
+
     try:
         # 1) Prepend title to text if configured
         full_text = text
-        if NARRATE_TITLE and story_title:
+        if settings.video.narrate_title and story_title:
             # Add title at the beginning with a pause
             full_text = f"{story_title}. {text}"
-            print(f"🎙️ Will narrate title: '{story_title}'")
+            print(f"Narrating title: '{story_title}'")
 
-        # 2) Generate audio using TTS-optimized text (expanded contractions)
-        # text_to_speech() will preprocess text internally (expand contractions, etc.)
-        # We need to get the SAME preprocessed text for subtitles to match audio perfectly
-        from app.utils.text_cleaning import prepare_text_for_tts
-        tts_text = prepare_text_for_tts(full_text)  # This is what will be spoken
-        
-        text_to_speech(full_text, str(out_audio), voice_type=voice_type)
-        
-        # Free up TTS memory immediately after generation
-        from app.video.tts import cleanup_tts_memory
-        cleanup_tts_memory()
+        # 2) Clean text and split into TTS chunks via LLM (falls back to hard rules)
+        from app.utils.text_cleaning import prepare_story_with_llm
+        tts_text, chunks = prepare_story_with_llm(full_text)
+
+        text_to_speech(full_text, str(out_audio), chunks=chunks)
 
         # 3) Generate SRT with perfect timing based on actual audio duration
         # Use TTS-PREPROCESSED text (expanded contractions) for subtitles
         # This ensures Whisper timing matches subtitle text 1:1 (no complex mapping needed)
-        # Example: Audio says "he is" → Whisper detects "he is" → Subtitles show "he is" ✅
+        # Example: Audio says "he is" -> Whisper detects "he is" -> Subtitles show "he is" (OK)
+
         srt_content = generate_srt_from_audio_and_text(
-            str(out_audio), 
+            str(out_audio),
             tts_text,  # Use expanded text to match what Whisper hears in the audio
-            speed_multiplier=VIDEO_SPEED_MULTIPLIER  # Adjust timing for speed-up
+            speed_multiplier=settings.video.video_speed_multiplier
         )
         with open(out_srt, 'w') as f:
             f.write(srt_content)
@@ -151,68 +77,80 @@ def generate_video_from_text(text: str, base_video_name: str, job_id: str = None
         # 3) Calculate random start time for base video
         estimated_duration = estimate_audio_duration(text)
         video_duration = get_video_duration(str(base_video))
-        
-        # Add some buffer to ensure we have enough video
-        needed_duration = estimated_duration + 5  # 5 second buffer
-        
+
+        # needed_duration is INPUT seconds for the base video (before speed-up).
+        # Both video and audio scale by speed_multiplier equally, so we just need
+        # the segment to cover the full audio duration (before atempo).
+        needed_duration = estimated_duration + 5
+
         if video_duration <= needed_duration:
-            # Use entire video if it's not much longer than needed
             start_time = 0
             segment_duration = None
         else:
-            # Pick random start time ensuring we have enough video left
             max_start = video_duration - needed_duration
             start_time = random.uniform(0, max_start)
             segment_duration = needed_duration
 
-        # 4) Merge audio with random segment of base video
-        merge_audio_with_video(str(base_video), str(out_audio), str(out_temp), start_time, segment_duration)
-
-        # 5) Burn in text captions AND speed up video in single pass (avoids double re-encoding)
-        # This preserves video quality by only re-encoding once
-        if VIDEO_SPEED_MULTIPLIER != 1.0:
-            print(f"🎬 Burning subtitles and speeding up to {VIDEO_SPEED_MULTIPLIER}x in single pass...")
-            burn_text_overlay(str(out_temp), str(out_srt), str(out_temp_final), speed_multiplier=VIDEO_SPEED_MULTIPLIER)
-            video_to_finalize = out_temp_final
+        # 4) Convert SRT → ASS (needed before single-pass encode)
+        from app.video.ffmpeg_utils import parse_srt_for_drawtext, generate_ass_subtitles, get_video_dimensions
+        # Get crop dimensions to pass correct resolution to ASS generator
+        width, height = get_video_dimensions(str(base_video))
+        target_aspect = 9 / 16
+        if width / height > target_aspect:
+            crop_height = height
+            crop_width = int(crop_height * target_aspect)
+            if crop_width > width:
+                crop_width = width
+                crop_height = int(crop_width / target_aspect)
         else:
-            burn_text_overlay(str(out_temp), str(out_srt), str(out_temp_final))
-            video_to_finalize = out_temp_final
+            crop_width, crop_height = width, height
+        words_with_timing = parse_srt_for_drawtext(str(out_srt))
+        generate_ass_subtitles(words_with_timing, str(out_ass), video_width=crop_width, video_height=crop_height)
 
-        # 6) Clean up large intermediate file BEFORE metadata step to free disk space
-        # The temp.mp4 is the largest file and no longer needed
-        try:
-            out_temp.unlink()  # Remove 154 MB temp video before metadata writing
-            
-            # Also clean up TTS chunk files if they exist
-            chunk_files = list(OUT_DIR.glob(f"{job_id}_chunk_*.wav"))
-            for chunk_file in chunk_files:
-                chunk_file.unlink()
-            
-            if chunk_files:
-                print(f"🗑️ Cleaned up temp file and {len(chunk_files)} TTS chunks to free disk space")
-            else:
-                print(f"🗑️ Cleaned up large temp file to free disk space")
-        except Exception as e:
-            print(f"Warning: Could not remove temp files: {e}")
+        # 5) Build YouTube Shorts metadata dict
+        now = datetime.now()
+        meta_title = (story_title[:100].strip() if story_title else 'Reddit Story')
+        description_parts = []
+        if text[:100]:
+            description_parts.append(text[:100].strip() + '...')
+        if subreddit:
+            description_parts.append(f'\nFrom r/{subreddit}')
+        description_parts.extend(['\n\n#RedditStories #Shorts #Storytelling', '\n\nSubscribe for more stories!'])
+        keywords = ['reddit', 'stories', 'shorts'] + ([subreddit.lower()] if subreddit else [])
+        video_metadata = {
+            'title': meta_title,
+            'description': ''.join(description_parts),
+            'comment': ''.join(description_parts),
+            'genre': 'Entertainment',
+            'artist': 'Narrify',
+            'album': 'Reddit Stories',
+            'date': now.strftime('%Y%m%d'),
+            'year': now.strftime('%Y'),
+            'copyright': f'© {now.year} Narrify',
+            'keywords': ', '.join(keywords),
+        }
 
-        # 7) Add YouTube Shorts optimized metadata
-        from app.video.metadata_utils import add_youtube_shorts_metadata
-        add_youtube_shorts_metadata(
-            str(video_to_finalize),
-            str(out_final),
-            title=story_title,
-            subreddit=subreddit,
-            text_snippet=text[:100]  # First 100 chars for description
+        # 6) Single-pass encode: crop + subtitles + speed-up + metadata → final output
+        print(f"Single-pass encode: crop, burn subtitles, speed up {settings.video.video_speed_multiplier}x, write metadata...")
+        encode_final_video(
+            base_video=str(base_video),
+            audio_file=str(out_audio),
+            ass_file=str(out_ass),
+            output_path=str(out_final),
+            start_time=start_time,
+            duration=segment_duration,
+            speed_multiplier=settings.video.video_speed_multiplier,
+            metadata=video_metadata,
         )
 
         return str(out_final)
-    
+
     finally:
         # ALWAYS cleanup intermediate files, even if generation failed
         # This ensures disk space is freed even when errors occur
-        print(f"🗑️ Cleaning up intermediate files for job {job_id}...")
+        print(f"Cleaning up intermediate files for job {job_id}...")
         cleaned_count = 0
-        
+
         # Clean up all tracked intermediate files
         for file_path in intermediate_files:
             if file_path.exists():
@@ -221,7 +159,7 @@ def generate_video_from_text(text: str, base_video_name: str, job_id: str = None
                     cleaned_count += 1
                 except Exception as e:
                     print(f"   Warning: Could not delete {file_path.name}: {e}")
-        
+
         # Clean up TTS chunk files
         chunk_files = list(OUT_DIR.glob(f"{job_id}_chunk_*.wav"))
         for chunk_file in chunk_files:
@@ -230,16 +168,6 @@ def generate_video_from_text(text: str, base_video_name: str, job_id: str = None
                 cleaned_count += 1
             except Exception as e:
                 print(f"   Warning: Could not delete {chunk_file.name}: {e}")
-        
-        # Clean up ASS subtitle files
-        ass_file = OUT_DIR / f"{job_id}.temp_final.ass"
-        if ass_file.exists():
-            try:
-                ass_file.unlink()
-                cleaned_count += 1
-            except Exception as e:
-                print(f"   Warning: Could not delete ASS file: {e}")
-        
-        if cleaned_count > 0:
-            print(f"   ✅ Cleaned up {cleaned_count} intermediate files")
 
+        if cleaned_count > 0:
+            print(f"   Cleaned up {cleaned_count} intermediate files")

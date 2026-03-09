@@ -1,9 +1,6 @@
-"""
-YouTube API service for automated video uploads.
-Handles OAuth authentication and video upload with metadata.
-"""
 import os
 import pickle
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any
 from googleapiclient.discovery import build
@@ -17,7 +14,10 @@ from app.utils.logger import logger
 
 
 # YouTube API scopes
-SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
+SCOPES = [
+    'https://www.googleapis.com/auth/youtube.upload',
+    'https://www.googleapis.com/auth/youtube.readonly',
+]
 
 
 class YouTubeService:
@@ -28,17 +28,7 @@ class YouTubeService:
         self.youtube = None
     
     def authenticate(self) -> None:
-        """
-        Authenticate with YouTube API using OAuth 2.0.
-        
-        First time:
-        - Opens browser for user to grant permissions
-        - Saves credentials to token file for future use
-        
-        Subsequent times:
-        - Loads credentials from token file
-        - Refreshes if expired
-        """
+        """Authenticate with YouTube API using OAuth 2.0."""
         token_file = Path(settings.youtube_token_file)
         credentials_file = Path(settings.youtube_client_secrets_file)
         
@@ -66,7 +56,7 @@ class YouTubeService:
                     str(credentials_file),
                     SCOPES
                 )
-                self.credentials = flow.run_local_server(port=8080)
+                self.credentials = flow.run_local_server(port=0)
             
             # Save credentials for future use
             token_file.parent.mkdir(parents=True, exist_ok=True)
@@ -85,22 +75,9 @@ class YouTubeService:
         description: str,
         tags: Optional[list] = None,
         category_id: str = "24",
-        privacy_status: str = "public"
+        privacy_status: str = "public",
+        publish_at: Optional[datetime] = None,
     ) -> Optional[str]:
-        """
-        Upload video to YouTube with metadata.
-        
-        Args:
-            video_path: Path to video file
-            title: Video title (will have #shorts appended)
-            description: Video description
-            tags: List of tags
-            category_id: YouTube category ID (default: 24 = Entertainment)
-            privacy_status: public, unlisted, or private
-        
-        Returns:
-            YouTube video ID if successful, None otherwise
-        """
         if not self.youtube:
             self.authenticate()
         
@@ -118,6 +95,15 @@ class YouTubeService:
             all_tags.extend(tags)
         
         # Prepare video metadata
+        status_body: Dict[str, Any] = {
+            'selfDeclaredMadeForKids': False,
+        }
+        if publish_at is not None:
+            status_body['privacyStatus'] = 'private'
+            status_body['publishAt'] = publish_at.isoformat()
+        else:
+            status_body['privacyStatus'] = privacy_status
+
         body = {
             'snippet': {
                 'title': full_title,
@@ -125,10 +111,7 @@ class YouTubeService:
                 'tags': all_tags,
                 'categoryId': category_id
             },
-            'status': {
-                'privacyStatus': privacy_status,
-                'selfDeclaredMadeForKids': False
-            }
+            'status': status_body,
         }
         
         # Create media upload object
@@ -169,15 +152,6 @@ class YouTubeService:
             return None
     
     def delete_video(self, video_id: str) -> bool:
-        """
-        Delete video from YouTube (use sparingly).
-        
-        Args:
-            video_id: YouTube video ID
-        
-        Returns:
-            True if successful, False otherwise
-        """
         if not self.youtube:
             self.authenticate()
         
@@ -190,15 +164,6 @@ class YouTubeService:
             return False
     
     def get_video_info(self, video_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Get video information from YouTube.
-        
-        Args:
-            video_id: YouTube video ID
-        
-        Returns:
-            Video info dict or None if not found
-        """
         if not self.youtube:
             self.authenticate()
         

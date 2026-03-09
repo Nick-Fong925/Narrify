@@ -1,7 +1,3 @@
-"""
-Automation scheduler for daily video generation and YouTube posting.
-Schedules batches at configured times (default: 5 PM and 9 PM EST).
-"""
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from datetime import datetime
@@ -9,7 +5,10 @@ from typing import Optional
 import pytz
 
 from app.config import settings
-from app.services.video_service import video_service
+from app.services.upload_service import upload_service
+from app.services.notification_service import send_batch_complete
+from app.services.analytics_service import collect_and_report
+from app.scheduler import scheduled_scrape
 from app.utils.logger import logger
 
 
@@ -21,25 +20,23 @@ class AutomationScheduler:
         self.timezone = pytz.timezone(settings.automation.timezone)
     
     def run_batch_job(self, batch_name: str):
-        """
-        Run a batch of video generation and upload.
-        
-        Args:
-            batch_name: Name of the batch (for logging)
-        """
         batch_time = datetime.now(self.timezone).strftime("%Y-%m-%d %H:%M:%S")
         video_count = settings.automation.videos_per_batch
-        
+
         logger.automation_batch_start(
             batch_time=batch_time,
             video_count=video_count
         )
-        
+
         try:
-            # Process batch
-            successful, failed = video_service.process_batch(
+            # Step 1: Scrape Reddit fresh before generating
+            logger.info("Running Reddit scrape before video generation...")
+            scheduled_scrape()
+            logger.info("Reddit scrape complete — starting video generation")
+
+            # Step 2: Generate and upload batch
+            successful, failed = upload_service.process_batch(
                 count=video_count,
-                delete_after_upload=True  # Delete videos after upload
             )
             
             logger.automation_batch_complete(
@@ -47,7 +44,8 @@ class AutomationScheduler:
                 successful=successful,
                 failed=failed
             )
-            
+            send_batch_complete(batch_time, successful, failed)
+
         except Exception as e:
             logger.error(
                 f"Automation batch failed: {batch_name}",
@@ -56,15 +54,6 @@ class AutomationScheduler:
             )
     
     def schedule_jobs(self):
-        """
-        Schedule jobs based on automation config.
-        
-        Example config:
-        - schedule_times: ["17:00", "21:00"]
-        - timezone: "America/New_York"
-        
-        This will schedule jobs at 5 PM and 9 PM EST daily.
-        """
         for i, time_str in enumerate(settings.automation.schedule_times):
             # Parse time (HH:MM format)
             hour, minute = map(int, time_str.split(':'))
@@ -93,7 +82,16 @@ class AutomationScheduler:
                 timezone=settings.automation.timezone,
                 videos_per_batch=settings.automation.videos_per_batch
             )
-    
+
+        analytics_hour, analytics_minute = map(int, settings.automation.analytics_time.split(':'))
+        self.scheduler.add_job(
+            func=collect_and_report,
+            trigger=CronTrigger(hour=analytics_hour, minute=analytics_minute, timezone=self.timezone),
+            id="daily_analytics",
+            name="Daily YouTube Analytics Report",
+            replace_existing=True
+        )
+
     def start(self):
         """Start the scheduler"""
         if not self.scheduler.running:
@@ -113,20 +111,13 @@ class AutomationScheduler:
             logger.info("Automation scheduler stopped")
     
     def run_now(self, video_count: Optional[int] = None):
-        """
-        Run batch job immediately (for testing).
-        
-        Args:
-            video_count: Number of videos to process (default: videos_per_batch)
-        """
         if video_count is None:
             video_count = settings.automation.videos_per_batch
         
         logger.info(f"Running immediate batch job: {video_count} videos")
         
-        successful, failed = video_service.process_batch(
+        successful, failed = upload_service.process_batch(
             count=video_count,
-            delete_after_upload=True
         )
         
         logger.info(

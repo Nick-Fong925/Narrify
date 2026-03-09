@@ -1,0 +1,28 @@
+# Virtual environment — never copy into image (pip install handles deps)
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pycache
+
+# Generated/runtime files — all served via volume mounts
+logs/
+stories.db
+app/video/media/
+
+# Secrets and local config
+.env
+*.env
+
+# Dev/test artifacts
+tests/
+.pytest_cache/
+.mypy_cache/
+
+# Git
+.git/
+.gitignore

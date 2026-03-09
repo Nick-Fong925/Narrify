@@ -1,0 +1,22 @@
+services:
+  narrify:
+    build:
+      context: ./backend
+    container_name: narrify
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist credentials, DB, media, and logs across container rebuilds
+      - ./backend/config:/app/config
+      - ./backend/stories.db:/app/stories.db
+      - ./backend/app/video/media:/app/app/video/media
+      - ./backend/logs:/app/logs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
