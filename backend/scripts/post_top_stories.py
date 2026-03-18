@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from app.db import SessionLocal
 from app.models.post import Post, GenerationStatus
 from app.services.video_service import video_service
+from app.services.upload_service import upload_service
 from app.utils.logger import logger
 
 
@@ -172,7 +173,7 @@ def main():
                 # Step 2: Upload to YouTube
                 print(f"\n📤 Uploading to YouTube ({args.privacy})...")
                 
-                video_id = video_service.upload_to_youtube(post, video_path, db)
+                video_id = upload_service.upload_to_youtube(post, video_path, db)
                 
                 if video_id:
                     print(f"✅ Upload successful!")

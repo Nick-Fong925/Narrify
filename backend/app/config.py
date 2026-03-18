@@ -21,8 +21,8 @@ class VideoSettings(BaseSettings):
     # Video speed / encoding
     video_speed_multiplier: float = 1.8
     use_nvenc: bool = True
-    video_crf: int = 20
-    video_preset: str = "fast"
+    video_crf: int = 18
+    video_preset: str = "medium"
     video_bitrate_max: str = "8M"
 
     # Title narration

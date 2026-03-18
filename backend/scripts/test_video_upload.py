@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from app.db import SessionLocal
 from app.models.post import Post, GenerationStatus
 from app.services.video_service import video_service
+from app.services.upload_service import upload_service
 from app.utils.logger import logger
 import os
 
@@ -105,7 +106,7 @@ def main():
         settings.youtube.privacy = args.privacy
         
         try:
-            video_id = video_service.upload_to_youtube(
+            video_id = upload_service.upload_to_youtube(
                 post=post,
                 video_path=video_path,
                 db=db

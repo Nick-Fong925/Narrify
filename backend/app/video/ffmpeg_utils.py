@@ -174,21 +174,19 @@ def srt_time_to_seconds(time_str):
     ms = int(ms_part)
     return h * 3600 + m * 60 + s + ms / 1000.0
 
-def generate_ass_subtitles(words_with_timing, output_path, video_width=810, video_height=1440):
-    """Generate ASS subtitle file respecting the phrase groupings from SRT"""
-    
-    # Scale font, outline, and shadow proportionally to video height
+def generate_ass_subtitles(words_with_timing, output_path, video_width=1080, video_height=1920):
+    """Generate ASS subtitle file with karaoke-style word highlighting.
+
+    Words are grouped into display phrases (per subtitle settings). For each word
+    in a phrase, one Dialogue line is emitted showing the full phrase with the
+    active word highlighted in yellow and surrounding words in white.
+    """
     base_font_size = 36
     base_height = 854
     scaled_font_size = int((video_height / base_height) * base_font_size)
-    
-    # Scale outline and shadow proportionally too
-    base_outline = 3
-    base_shadow = 2
-    scaled_outline = int((video_height / base_height) * base_outline)
-    scaled_shadow = int((video_height / base_height) * base_shadow)
-    
-    # ASS header with bold white text, black outline
+    scaled_outline = int((video_height / base_height) * 3)
+    scaled_shadow = int((video_height / base_height) * 2)
+
     ass_content = f"""[Script Info]
 Title: Generated Subtitles
 ScriptType: v4.00+
@@ -202,23 +200,42 @@ Style: Default,Arial,{scaled_font_size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    
+
+    # Group individual words into display phrases
+    words_min = settings.video.words_per_subtitle_min
+    words_max = settings.video.words_per_subtitle_max
+    break_punct = settings.video.break_punctuation
+
     phrases = []
-    for word_data in words_with_timing:
-        phrases.append({
-            'start': word_data['start'],
-            'end': word_data['end'],
-            'text': word_data['word']
-        })
-    
-    for i, phrase in enumerate(phrases):
-        start_time = format_ass_time(phrase['start'])
-        if i < len(phrases) - 1:
-            end_time = format_ass_time(phrases[i + 1]['start'])
-        else:
-            end_time = format_ass_time(phrase['end'])
-        text = phrase['text']
-        ass_content += f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{text}\n"
+    i = 0
+    while i < len(words_with_timing):
+        phrase = []
+        while i < len(words_with_timing) and len(phrase) < words_max:
+            phrase.append(words_with_timing[i])
+            i += 1
+            if len(phrase) >= words_min and phrase[-1]['word'] and phrase[-1]['word'][-1] in break_punct:
+                break
+        if phrase:
+            phrases.append(phrase)
+
+    # Emit one Dialogue line per word — active word yellow, rest white
+    for phrase in phrases:
+        for w_idx, word_data in enumerate(phrase):
+            start_time = format_ass_time(word_data['start'])
+            if w_idx < len(phrase) - 1:
+                end_time = format_ass_time(phrase[w_idx + 1]['start'])
+            else:
+                end_time = format_ass_time(word_data['end'])
+
+            parts = []
+            for j, w in enumerate(phrase):
+                if j == w_idx:
+                    parts.append(f"{{\\c&H0000FFFF&}}{w['word']}{{\\c&HFFFFFF&}}")
+                else:
+                    parts.append(w['word'])
+            text = ' '.join(parts)
+
+            ass_content += f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{text}\n"
 
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(ass_content)
@@ -271,10 +288,9 @@ def encode_final_video(
     # ASS path needs forward slashes and escaped colons for ffmpeg on Windows
     ass_ffmpeg = ass_file.replace('\\', '/').replace(':', '\\:')
 
-    # Build video filter chain: crop → subtitles → speed
-    vf_parts = [f"crop={crop_width}:{crop_height}:{crop_x}:{crop_y}", f"ass='{ass_ffmpeg}'"]
-    if speed_multiplier != 1.0:
-        vf_parts.append(f"setpts=PTS/{speed_multiplier}")
+    # Build video filter chain: crop → scale to 1080x1920 → subtitles
+    # Video plays at natural speed; only audio is sped up via atempo
+    vf_parts = [f"crop={crop_width}:{crop_height}:{crop_x}:{crop_y}", "scale=1080:1920", f"ass='{ass_ffmpeg}'"]
 
     # Build audio filter chain: speed (chain atempo if > 2.0)
     af_parts = []

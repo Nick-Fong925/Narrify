@@ -37,7 +37,7 @@ def generate_video_from_text(text: str, base_video_name: str, job_id: str = None
     if not base_video.exists():
         raise FileNotFoundError(f"Base video not found: {base_video}")
 
-    out_audio = OUT_DIR / f"{job_id}.mp3"
+    out_audio = OUT_DIR / f"{job_id}.wav"
     out_srt = OUT_DIR / f"{job_id}.srt"
     out_ass = OUT_DIR / f"{job_id}.ass"
     out_final = OUT_DIR / f"{job_id}.mp4"
@@ -71,7 +71,7 @@ def generate_video_from_text(text: str, base_video_name: str, job_id: str = None
             tts_text,  # Use expanded text to match what Whisper hears in the audio
             speed_multiplier=settings.video.video_speed_multiplier
         )
-        with open(out_srt, 'w') as f:
+        with open(out_srt, 'w', encoding='utf-8') as f:
             f.write(srt_content)
 
         # 3) Calculate random start time for base video
@@ -81,7 +81,8 @@ def generate_video_from_text(text: str, base_video_name: str, job_id: str = None
         # needed_duration is INPUT seconds for the base video (before speed-up).
         # Both video and audio scale by speed_multiplier equally, so we just need
         # the segment to cover the full audio duration (before atempo).
-        needed_duration = estimated_duration + 5
+        # Video plays at 1x; output length = audio_duration / speed_multiplier
+        needed_duration = (estimated_duration / settings.video.video_speed_multiplier) + 10
 
         if video_duration <= needed_duration:
             start_time = 0
@@ -92,20 +93,10 @@ def generate_video_from_text(text: str, base_video_name: str, job_id: str = None
             segment_duration = needed_duration
 
         # 4) Convert SRT → ASS (needed before single-pass encode)
-        from app.video.ffmpeg_utils import parse_srt_for_drawtext, generate_ass_subtitles, get_video_dimensions
-        # Get crop dimensions to pass correct resolution to ASS generator
-        width, height = get_video_dimensions(str(base_video))
-        target_aspect = 9 / 16
-        if width / height > target_aspect:
-            crop_height = height
-            crop_width = int(crop_height * target_aspect)
-            if crop_width > width:
-                crop_width = width
-                crop_height = int(crop_width / target_aspect)
-        else:
-            crop_width, crop_height = width, height
+        from app.video.ffmpeg_utils import parse_srt_for_drawtext, generate_ass_subtitles
         words_with_timing = parse_srt_for_drawtext(str(out_srt))
-        generate_ass_subtitles(words_with_timing, str(out_ass), video_width=crop_width, video_height=crop_height)
+        # Always use 1080x1920 — encode_final_video scales to this resolution
+        generate_ass_subtitles(words_with_timing, str(out_ass), video_width=1080, video_height=1920)
 
         # 5) Build YouTube Shorts metadata dict
         now = datetime.now()

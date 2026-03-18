@@ -71,39 +71,17 @@ def generate_srt_from_audio_and_text(audio_path, text, speed_multiplier=1.0):
         ]
         print(f"Using {len(word_timings)} Whisper words directly (no index mapping)")
 
-        words_min = settings.video.words_per_subtitle_min
-        words_max = settings.video.words_per_subtitle_max
-        break_punct = settings.video.break_punctuation
-        print(f"Grouping words into {words_min}-{words_max} word phrases...")
+        # Write one entry per word — timestamps scaled to output time (after audio speed-up)
+        # e.g. word at t=10s with speed=1.8x → subtitle at t=5.56s on the 1x video
+        print(f"Writing {len(word_timings)} word-level SRT entries (scaled by 1/{speed_multiplier})...")
         srt_content = []
-        phrase_num = 1
-        i = 0
-
-        while i < len(word_timings):
-            phrase_words = []
-            phrase_start = word_timings[i]["start"]
-            phrase_end = word_timings[i]["end"]
-            words_in_phrase = 0
-
-            while i < len(word_timings) and words_in_phrase < words_max:
-                word_data = word_timings[i]
-                phrase_words.append(word_data["word"])
-                phrase_end = word_data["end"]
-                words_in_phrase += 1
-                i += 1
-
-                if words_in_phrase >= words_min:
-                    if word_data["word"] and word_data["word"][-1] in break_punct:
-                        break
-
-            phrase_text = " ".join(phrase_words)
-            srt_content.append(f"{phrase_num}")
-            srt_content.append(f"{format_timestamp(phrase_start)} --> {format_timestamp(phrase_end)}")
-            srt_content.append(phrase_text)
+        for i, word_data in enumerate(word_timings):
+            srt_content.append(f"{i + 1}")
+            srt_content.append(f"{format_timestamp(word_data['start'] / speed_multiplier)} --> {format_timestamp(word_data['end'] / speed_multiplier)}")
+            srt_content.append(word_data["word"])
             srt_content.append("")
-            phrase_num += 1
 
-        print(f"Generated {phrase_num - 1} subtitle phrases from {len(word_timings)} words")
+        print(f"Generated {len(word_timings)} word-level subtitle entries")
         return "\n".join(srt_content)
 
     except Exception as e:

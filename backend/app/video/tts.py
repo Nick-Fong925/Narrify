@@ -78,10 +78,10 @@ def text_to_speech(text: str, output_path: str, chunks: list = None) -> str:
     full_audio = np.concatenate(audio_segments)
 
     # Write combined audio as WAV, then post-process to MP3
-    temp_wav = str(output_path).replace('.mp3', '_temp.wav')
+    temp_wav = str(output_path).replace('.wav', '_raw.wav')
     sf.write(temp_wav, full_audio, settings.video.kokoro_sample_rate)
     try:
-        convert_to_mp3_with_processing(temp_wav, output_path)
+        convert_to_wav_with_processing(temp_wav, output_path)
     finally:
         if os.path.exists(temp_wav):
             os.remove(temp_wav)
@@ -100,8 +100,8 @@ def cleanup_tts_memory():
     print("TTS memory cleaned up.")
 
 
-def convert_to_mp3_with_processing(input_path: str, output_path: str):
-    """Convert WAV to MP3 with ffmpeg audio enhancement chain."""
+def convert_to_wav_with_processing(input_path: str, output_path: str):
+    """Process raw WAV through enhancement filters and output a lossless WAV (no transcode loss)."""
     base_filters = [
         "highpass=f=50",
     ]
@@ -162,13 +162,10 @@ def convert_to_mp3_with_processing(input_path: str, output_path: str):
         'ffmpeg', '-y',
         '-i', input_path,
         '-af', ','.join(ffmpeg_filters),
-        '-acodec', 'libmp3lame',
-        '-ar', '22050',
-        '-ac', '1',
-        '-b:a', settings.video.audio_bitrate,
+        '-acodec', 'pcm_s16le',
         str(output_path),
     ]
 
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        raise Exception(f"FFmpeg audio conversion failed: {result.stderr}")
+        raise Exception(f"FFmpeg audio processing failed: {result.stderr}")

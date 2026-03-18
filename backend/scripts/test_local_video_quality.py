@@ -57,7 +57,6 @@ def main():
             text=TEST_SCRIPT.strip(),
             base_video_name=BASE_VIDEO,
             job_id="quality_test",
-            voice_type="male",
             story_title="AITA for refusing to attend my sister's wedding?",
             subreddit="r/AmItheAsshole"
         )
